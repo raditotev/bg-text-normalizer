@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python:*)",
+      "Bash(pip install -e . 2>&1 | tail -3 && python test_normalizer.py 2>&1)"
+    ]
+  }
+}

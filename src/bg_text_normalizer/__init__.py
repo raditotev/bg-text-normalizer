@@ -5,10 +5,10 @@ Converts written Bulgarian text (numbers, dates, times, currency,
 abbreviations) into spoken word forms for TTS preprocessing.
 
 Usage:
-    from bg_text_norm import normalize_text
+    from bg_text_normalizer import normalize_text
     result = normalize_text("На 15.02.2026 г. в 14:30 ч. цената е 1500.50 лв.")
 
-    from bg_text_norm import BulgarianTextNormalizer
+    from bg_text_normalizer import BulgarianTextNormalizer
     normalizer = BulgarianTextNormalizer()
     result = normalizer.normalize("...")
 """

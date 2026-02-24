@@ -10,7 +10,7 @@ Supported currencies:
 - GBP (лири / пенса)
 """
 
-from bg_numbers import number_to_words_cardinal
+from .bg_numbers import number_to_words_cardinal
 
 CURRENCY_INFO = {
     'BGN': {
@@ -65,16 +65,22 @@ def normalize_currency(amount_str: str, currency: str = 'BGN') -> str:
 
     info = CURRENCY_INFO[currency]
 
-    # Parse amount
+    # Parse amount using string-based approach to avoid float precision issues
     amount_str = amount_str.replace(',', '.').replace(' ', '')
-    try:
-        amount = float(amount_str)
-    except ValueError:
-        return amount_str
-
-    main_amount = int(amount)
-    # Handle floating point precision
-    sub_amount = round((amount - main_amount) * 100)
+    if '.' in amount_str:
+        parts = amount_str.split('.', 1)
+        try:
+            main_amount = int(parts[0]) if parts[0] else 0
+        except ValueError:
+            return amount_str
+        sub_str = (parts[1] + '00')[:2]
+        sub_amount = int(sub_str)
+    else:
+        try:
+            main_amount = int(amount_str)
+        except ValueError:
+            return amount_str
+        sub_amount = 0
 
     parts = []
 

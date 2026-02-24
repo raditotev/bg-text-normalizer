@@ -11,7 +11,7 @@ Bulgarian time specifics:
 - Bulgarian uses 24-hour format predominantly
 """
 
-from bg_numbers import number_to_words_cardinal
+from .bg_numbers import number_to_words_cardinal
 
 
 def normalize_time(hours: int, minutes: int, include_suffix: bool = False) -> str:

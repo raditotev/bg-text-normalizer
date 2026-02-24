@@ -1,6 +1,7 @@
 """Comprehensive test suite for Bulgarian Text Normalizer."""
 
-from bg_normalizer import BulgarianTextNormalizer
+import sys
+from bg_text_normalizer import BulgarianTextNormalizer
 
 normalizer = BulgarianTextNormalizer()
 
@@ -125,3 +126,5 @@ edge_cases = [
 for text in edge_cases:
     result = normalizer.normalize(text)
     print(f"  {text:40s} → {result}")
+
+sys.exit(1 if failed else 0)

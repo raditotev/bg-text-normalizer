@@ -10,7 +10,7 @@ Bulgarian date specifics:
 - "година" (year) suffix is common
 """
 
-from bg_numbers import number_to_words_ordinal, number_to_words_cardinal
+from .bg_numbers import number_to_words_ordinal, number_to_words_cardinal
 
 MONTH_NAMES = {
     1: 'януари', 2: 'февруари', 3: 'март', 4: 'април',

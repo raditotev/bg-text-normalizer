@@ -6,26 +6,25 @@ Handles: numbers, dates, times, currency, abbreviations, percentages,
          phone numbers, ordinals, Roman numerals, and more.
 
 Usage:
-    from bg_normalizer import BulgarianTextNormalizer
+    from bg_text_normalizer import BulgarianTextNormalizer
     normalizer = BulgarianTextNormalizer()
     text = normalizer.normalize("На 15.02.2026 г. в 14:30 ч. цената е 1500.50 лв.")
     # Output: "На петнадесети февруари две хиляди двадесет и шеста година в четиринадесет и тридесет часа цената е хиляда и петстотин лева и петдесет стотинки."
 """
 
 import re
-from typing import Optional
 
-from bg_numbers import (
+from .bg_numbers import (
     number_to_words_cardinal,
     number_to_words_ordinal,
     float_to_words,
 )
-from bg_dates import normalize_date, normalize_year
-from bg_time import normalize_time
-from bg_currency import normalize_currency
-from bg_abbreviations import normalize_abbreviations, expand_abbreviation
-from bg_phone import normalize_phone_number
-from bg_roman import roman_to_arabic
+from .bg_dates import normalize_date, normalize_year
+from .bg_time import normalize_time
+from .bg_currency import normalize_currency
+from .bg_abbreviations import normalize_abbreviations, expand_abbreviation
+from .bg_phone import normalize_phone_number
+from .bg_roman import roman_to_arabic
 
 
 class BulgarianTextNormalizer:
@@ -40,7 +39,9 @@ class BulgarianTextNormalizer:
         Normalize Bulgarian text for TTS.
         Applies normalizations in a specific order to avoid conflicts.
         """
-        if not text or not text.strip():
+        if not isinstance(text, str):
+            raise TypeError(f"Expected str, got {type(text).__name__}")
+        if not text.strip():
             return text
 
         original = text
@@ -59,11 +60,11 @@ class BulgarianTextNormalizer:
         # Matches: 15.02.2026, 15.02.2026 г., 15/02/2026, 15-02-2026
         text = self._normalize_dates(text)
 
-        # Step 3: Time (before generic numbers)
+        # Step 5: Time (before generic numbers)
         # Matches: 14:30, 14:30 ч., 9:05 часа
         text = self._normalize_times(text)
 
-        # Step 4: Currency (before generic numbers)
+        # Step 6: Currency (before generic numbers)
         # Matches: 1500.50 лв., 25 лв, $100, €50, 100 EUR
         text = self._normalize_currency(text)
 
@@ -76,17 +77,17 @@ class BulgarianTextNormalizer:
         # Step 9: Symbols (№, &, etc.)
         text = self._normalize_symbols(text)
 
-        # Step 8: Ordinal numbers (before cardinals)
+        # Step 10: Ordinal numbers (before cardinals)
         # Matches: 1-ви, 2-ри, 3-ти, 15-ти, 1-ва, 2-ра
         text = self._normalize_ordinals(text)
 
-        # Step 9: Standalone years (4-digit numbers that look like years)
+        # Step 11: Standalone years (4-digit numbers that look like years)
         text = self._normalize_standalone_years(text)
 
-        # Step 10: Cardinal numbers (generic number-to-words)
+        # Step 12: Cardinal numbers (generic number-to-words)
         text = self._normalize_cardinal_numbers(text)
 
-        # Step 11: Clean up extra whitespace
+        # Step 13: Clean up extra whitespace
         text = re.sub(r'\s+', ' ', text).strip()
 
         if self.verbose and text != original:
@@ -128,8 +129,8 @@ class BulgarianTextNormalizer:
         ), text)
 
         # Partial date: 15.02 or 15/02 (day.month, no year)
-        # Only match if not part of a longer number
-        pattern = r'\b(\d{1,2})[./](\d{1,2})\b(?!\.\d)'
+        # Only match if not part of a longer number or followed by currency/unit
+        pattern = r'\b(\d{1,2})[./](\d{1,2})\b(?!\.\d)(?!\s*(?:лв|лева|евро|долар|EUR|USD|BGN|GBP|%|ч\.|часа))'
         def partial_date_repl(m):
             day, month = int(m.group(1)), int(m.group(2))
             if 1 <= day <= 31 and 1 <= month <= 12:
@@ -191,7 +192,7 @@ class BulgarianTextNormalizer:
         def pct_repl(m):
             num_str = m.group(1).replace(',', '.')
             if '.' in num_str:
-                return float_to_words(float(num_str)) + ' процента'
+                return float_to_words(num_str) + ' процента'
             else:
                 return number_to_words_cardinal(int(num_str)) + ' процента'
         text = re.sub(pattern, pct_repl, text)
@@ -207,27 +208,37 @@ class BulgarianTextNormalizer:
     def _normalize_roman_numerals(self, text: str) -> str:
         """Normalize Roman numerals to ordinal words."""
         # Roman numerals typically used for centuries, monarchs, chapters
-        # Match Roman numerals preceded by common context words
-        pattern = r'\b(век|глава|том|книга|част|клас|степен)\s+((?:X{0,3})(?:IX|IV|V?I{0,3}))\b'
-        def roman_repl(m):
-            context = m.group(1)
-            roman = m.group(2)
+        roman_pattern = r'(?=[IVXLCDM])(?:X{0,3})(?:IX|IV|V?I{0,3})'
+        context_words = r'век|глава|том|книга|част|клас|степен'
+        feminine_words = {'глава', 'книга', 'част', 'степен'}
+
+        def _roman_to_ordinal(roman: str, context: str) -> str:
             if not roman:
-                return m.group(0)
+                return None
             arabic = roman_to_arabic(roman)
             if arabic is None:
-                return m.group(0)
-            # Determine gender from context
-            feminine_words = {'глава', 'книга', 'част', 'степен'}
+                return None
             gender = 'f' if context.lower() in feminine_words else 'm'
-            ordinal = number_to_words_ordinal(arabic, gender=gender)
-            return f'{context} {ordinal}'
+            return number_to_words_ordinal(arabic, gender=gender)
+
+        # Pattern 1: context word THEN Roman numeral (e.g., "век XXI")
+        pattern = r'\b(' + context_words + r')\s+(' + roman_pattern + r')\b'
+        def roman_repl(m):
+            ordinal = _roman_to_ordinal(m.group(2), m.group(1))
+            if ordinal is None:
+                return m.group(0)
+            return f'{m.group(1)} {ordinal}'
         text = re.sub(pattern, roman_repl, text, flags=re.IGNORECASE)
 
-        # Standalone Roman numerals (uppercase, surrounded by spaces/punctuation)
-        # Be conservative — only convert obvious ones
-        pattern = r'\b(I{1,3}|IV|V|VI{0,3}|IX|X{1,3}|XI{0,3}|XIV|XV|XVI{0,3}|XIX|XX|XXI)\b'
-        # Don't convert standalone Roman numerals without context — too ambiguous
+        # Pattern 2: Roman numeral THEN context word (e.g., "XXI век")
+        pattern = r'\b(' + roman_pattern + r')\s+(' + context_words + r')\b'
+        def roman_repl_reversed(m):
+            ordinal = _roman_to_ordinal(m.group(1), m.group(2))
+            if ordinal is None:
+                return m.group(0)
+            return f'{ordinal} {m.group(2)}'
+        text = re.sub(pattern, roman_repl_reversed, text, flags=re.IGNORECASE)
+
         return text
 
     def _normalize_ordinals(self, text: str) -> str:
@@ -250,14 +261,15 @@ class BulgarianTextNormalizer:
     def _normalize_standalone_years(self, text: str) -> str:
         """Normalize 4-digit years that appear in year-like contexts."""
         # Year with г./година: 2026 г., 1989 година
-        pattern = r'\b(\d{4})\s*(г\.|година|години)'
+        # Do NOT match "години" (plural) — that means "years" as duration, not a year label
+        pattern = r'\b(\d{4})\s*(г\.|година)(?!и)'
         def year_repl(m):
             year = int(m.group(1))
+            suffix = m.group(2)
             if 1000 <= year <= 2100:
                 return normalize_year(year) + ' година'
             return m.group(0)
         text = re.sub(pattern, year_repl, text)
-        return text
         return text
 
     def _normalize_cardinal_numbers(self, text: str) -> str:
@@ -269,8 +281,8 @@ class BulgarianTextNormalizer:
             frac = m.group(2)
             num_str = f"{whole}.{frac}"
             try:
-                return float_to_words(float(num_str))
-            except:
+                return float_to_words(num_str)
+            except (ValueError, KeyError):
                 return m.group(0)
         text = re.sub(pattern, decimal_repl, text)
 
@@ -282,17 +294,24 @@ class BulgarianTextNormalizer:
                 return m.group(0)
             try:
                 return number_to_words_cardinal(num)
-            except:
+            except (ValueError, KeyError):
                 return m.group(0)
         text = re.sub(pattern, cardinal_repl, text)
 
         return text
 
 
+_default_normalizer = None
+
+
 def normalize_text(text: str, **kwargs) -> str:
     """Convenience function for quick normalization."""
-    normalizer = BulgarianTextNormalizer(**kwargs)
-    return normalizer.normalize(text)
+    global _default_normalizer
+    if kwargs:
+        return BulgarianTextNormalizer(**kwargs).normalize(text)
+    if _default_normalizer is None:
+        _default_normalizer = BulgarianTextNormalizer()
+    return _default_normalizer.normalize(text)
 
 
 if __name__ == '__main__':

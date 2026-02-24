@@ -9,13 +9,7 @@ Bulgarian phone formats:
 - International: +359 888 123 456
 """
 
-from bg_numbers import number_to_words_cardinal
-
-# Single digits spoken form
-DIGIT_WORDS = {
-    '0': 'нула', '1': 'едно', '2': 'две', '3': 'три', '4': 'четири',
-    '5': 'пет', '6': 'шест', '7': 'седем', '8': 'осем', '9': 'девет',
-}
+from .bg_numbers import number_to_words_cardinal, DIGIT_WORDS
 
 
 def normalize_phone_number(phone: str) -> str:
@@ -37,9 +31,6 @@ def normalize_phone_number(phone: str) -> str:
     if cleaned.startswith('+359'):
         prefix = 'плюс три пет девет '
         cleaned = cleaned[4:].strip()
-        # Add leading zero for domestic format
-        if not cleaned.startswith('0'):
-            cleaned = '0' + cleaned
 
     # Remove all non-digits
     digits_only = ''.join(c for c in cleaned if c.isdigit())

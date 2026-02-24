@@ -12,7 +12,12 @@ Bulgarian number system specifics:
 - Ordinal suffixes depend on gender
 """
 
-from typing import Optional
+# === Digit words for fallback digit-by-digit reading ===
+
+DIGIT_WORDS = {
+    '0': 'нула', '1': 'едно', '2': 'две', '3': 'три', '4': 'четири',
+    '5': 'пет', '6': 'шест', '7': 'седем', '8': 'осем', '9': 'девет',
+}
 
 # === Cardinal number components ===
 
@@ -173,6 +178,9 @@ def number_to_words_cardinal(n: int, gender: str = 'm') -> str:
     if n < 0:
         return 'минус ' + number_to_words_cardinal(-n, gender)
 
+    if n > 999_999_999_999:
+        return ' '.join(DIGIT_WORDS.get(d, d) for d in str(n))
+
     parts = []
 
     # Billions (милиарди)
@@ -314,18 +322,30 @@ def number_to_words_ordinal(n: int, gender: str = 'm') -> str:
     return number_to_words_cardinal(n, gender)
 
 
-def float_to_words(f: float, gender: str = 'n') -> str:
+def float_to_words(f, gender: str = 'n') -> str:
     """
-    Convert a float to Bulgarian words.
+    Convert a float or numeric string to Bulgarian words.
     E.g., 3.14 → "три цяло и четиринадесет стотни"
     For simple cases like 1.5 → "едно цяло и пет десети"
-    """
-    if f == int(f):
-        return number_to_words_cardinal(int(f), gender)
 
-    whole = int(f)
-    # Get decimal part as string to preserve leading zeros
-    decimal_str = f'{f:.10f}'.split('.')[1].rstrip('0')
+    Accepts float or string. String is preferred for precision.
+    """
+    # Use string-based parsing to avoid IEEE 754 artifacts
+    if isinstance(f, str):
+        s = f
+    elif isinstance(f, float):
+        s = f'{f:.10g}'
+    else:
+        s = str(f)
+    s = s.replace(',', '.')
+
+    if '.' not in s:
+        return number_to_words_cardinal(int(s), gender)
+
+    whole_str, decimal_str = s.split('.', 1)
+    decimal_str = decimal_str.rstrip('0')
+
+    whole = int(whole_str) if whole_str else 0
 
     if not decimal_str:
         return number_to_words_cardinal(whole, gender)
