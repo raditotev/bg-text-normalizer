@@ -19,7 +19,7 @@ from .bg_numbers import (
     number_to_words_ordinal,
     float_to_words,
 )
-from .bg_dates import normalize_date, normalize_year
+from .bg_dates import normalize_date, normalize_year, MONTH_NAMES
 from .bg_time import normalize_time
 from .bg_currency import normalize_currency
 from .bg_abbreviations import normalize_abbreviations, expand_abbreviation
@@ -138,6 +138,32 @@ class BulgarianTextNormalizer:
             return m.group(0)
         text = re.sub(pattern, partial_date_repl, text)
 
+        # Date with month name: "15 май", "1 Януари 2026 г."
+        month_names_pattern = '|'.join(MONTH_NAMES.values())
+        month_name_to_num = {name.lower(): num for num, name in MONTH_NAMES.items()}
+
+        # With year: "15 май 2026 г." or "15 май 2026"
+        pattern = r'\b(\d{1,2})\s+(' + month_names_pattern + r')\s+(\d{4})\s*(г\.?)?'
+        def month_name_year_repl(m):
+            day = int(m.group(1))
+            month = month_name_to_num[m.group(2).lower()]
+            year = int(m.group(3))
+            has_suffix = m.group(4) is not None
+            if 1 <= day <= 31:
+                return normalize_date(day, month, year, include_year_suffix=has_suffix)
+            return m.group(0)
+        text = re.sub(pattern, month_name_year_repl, text, flags=re.IGNORECASE)
+
+        # Without year: "15 май"
+        pattern = r'\b(\d{1,2})\s+(' + month_names_pattern + r')\b'
+        def month_name_repl(m):
+            day = int(m.group(1))
+            month = month_name_to_num[m.group(2).lower()]
+            if 1 <= day <= 31:
+                return normalize_date(day, month)
+            return m.group(0)
+        text = re.sub(pattern, month_name_repl, text, flags=re.IGNORECASE)
+
         return text
 
     def _normalize_times(self, text: str) -> str:
@@ -208,7 +234,8 @@ class BulgarianTextNormalizer:
     def _normalize_roman_numerals(self, text: str) -> str:
         """Normalize Roman numerals to ordinal words."""
         # Roman numerals typically used for centuries, monarchs, chapters
-        roman_pattern = r'(?=[IVXLCDM])(?:X{0,3})(?:IX|IV|V?I{0,3})'
+        # Full pattern: M{0,3} CD/D?C{0,3} XC/XL/L?X{0,3} IX/IV/V?I{0,3}
+        roman_pattern = r'(?=[IVXLCDM])M{0,3}(?:CM|CD|D?C{0,3})(?:XC|XL|L?X{0,3})(?:IX|IV|V?I{0,3})'
         context_words = r'век|глава|том|книга|част|клас|степен'
         feminine_words = {'глава', 'книга', 'част', 'степен'}
 
