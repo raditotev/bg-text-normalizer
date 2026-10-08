@@ -38,8 +38,18 @@ from .bg_punctuation import sentence_period
 class BulgarianTextNormalizer:
     """Main normalizer class that orchestrates all sub-normalizers."""
 
-    def __init__(self, expand_abbrevs: bool = True, verbose: bool = False):
+    def __init__(self, expand_abbrevs: bool = True, verbose: bool = False,
+                 roman_numerals: bool = False):
+        """
+        Args:
+            expand_abbrevs: expand abbreviations and units.
+            verbose: print each change.
+            roman_numerals: also read a Roman numeral that follows a capitalized
+                name as an ordinal ("Карл V" → "Карл пети"). Off by default,
+                because "Марк I" can be a product name.
+        """
         self.expand_abbrevs = expand_abbrevs
+        self.roman_numerals = roman_numerals
         self.verbose = verbose
 
     def normalize(self, text: str) -> str:
@@ -177,6 +187,8 @@ class BulgarianTextNormalizer:
     def _normalize_symbols(self, text: str) -> str:
         """Normalize special symbols."""
         text = text.replace('№', 'номер ')
+        # Latin "No 15" / "No. 15": only before a digit, so "No way" is untouched
+        text = re.sub(r'(?<![\w.])No\.?\s*(?=\d)', 'номер ', text)
         text = text.replace('&', ' и ')
         return text
 
@@ -333,6 +345,20 @@ class BulgarianTextNormalizer:
                 return m.group(0)
             return f'{ordinal} {m.group(2)}'
         text = re.sub(pattern, roman_repl_reversed, text, flags=re.IGNORECASE)
+
+        # Pattern 3 (opt-in): numeral after a capitalized name, e.g. "Карл V".
+        # A lone C, D, L or M is more likely an initial than a number.
+        if self.roman_numerals:
+            pattern = (r'(?<![\w.])([А-ЯA-Z][а-яa-z]+)\s+(' + roman_pattern
+                       + r')(?![\w-])')
+            def roman_name_repl(m):
+                if m.group(2) in ('C', 'D', 'L', 'M'):
+                    return m.group(0)
+                ordinal = _roman_to_ordinal(m.group(2), '')
+                if ordinal is None:
+                    return m.group(0)
+                return f'{m.group(1)} {ordinal}'
+            text = re.sub(pattern, roman_name_repl, text)
 
         return text
 

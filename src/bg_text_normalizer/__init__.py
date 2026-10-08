@@ -22,7 +22,7 @@ from .bg_abbreviations import normalize_abbreviations, expand_abbreviation
 from .bg_phone import normalize_phone_number
 from .bg_roman import roman_to_arabic
 
-__version__ = "1.2.0"
+__version__ = "1.3.0"
 __all__ = [
     'BulgarianTextNormalizer',
     'normalize_text',

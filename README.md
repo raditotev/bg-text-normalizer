@@ -19,7 +19,7 @@ A comprehensive text normalization package that converts written Bulgarian text 
 | **Abbreviations** | `бул. Витоша, гр. София` → `булевард Витоша, град София` |
 | **Phone numbers** | `0888 123 456` → `нула осем осем осем едно две три четири пет шест` |
 | **Roman numerals** | `век XXI` → `век двадесет и първи` |
-| **Symbols** | `№10` → `номер десет` |
+| **Symbols** | `№10` → `номер десет`, `No 15` → `номер петнадесет` |
 
 ## Grammatical Correctness
 
@@ -47,6 +47,14 @@ normalizer = BulgarianTextNormalizer(expand_abbrevs=True, verbose=False)
 result = normalizer.normalize("бул. Витоша №10, гр. София")
 # "булевард Витоша номер десет, град София"
 ```
+
+A Roman numeral after a capitalized name (`Карл V`) is left alone by default,
+since `Марк I` can be a product name. Turn it on with `roman_numerals=True`:
+```python
+BulgarianTextNormalizer(roman_numerals=True).normalize("Борис III управлява.")
+# "Борис трети управлява."
+```
+A lone `C`, `D`, `L` or `M` after a name is skipped, because it is usually an initial.
 
 ### Individual modules
 ```python
