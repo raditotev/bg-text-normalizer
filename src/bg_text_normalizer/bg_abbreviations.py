@@ -16,6 +16,9 @@ Categories:
 import re
 from typing import Dict, Tuple
 
+from .bg_punctuation import sentence_period
+from .bg_units import normalize_units
+
 # Abbreviation → (full form, is_case_sensitive)
 # Order matters: longer abbreviations should be checked first
 
@@ -48,6 +51,8 @@ TITLE_ABBREVS: Dict[str, str] = {
     'г-н': 'господин',
     'г-жа': 'госпожа',
     'г-ца': 'госпожица',
+    'г-жи': 'госпожи',
+    'г-да': 'господа',
     'д-р': 'доктор',
     'проф.': 'професор',
     'доц.': 'доцент',
@@ -104,6 +109,7 @@ COMMON_ABBREVS: Dict[str, str] = {
     'и т. н.': 'и така нататък',
     'и др.': 'и други',
     'вж.': 'виж',
+    'тел.': 'телефон',
     'ср.': 'сравни',
     'вкл.': 'включително',
     'изд.': 'издание',
@@ -121,6 +127,17 @@ COMMON_ABBREVS: Dict[str, str] = {
     'сл. н. е.': 'след новата ера',
     'пр.Хр.': 'преди Христа',
     'сл.Хр.': 'след Христа',
+}
+
+# Abbreviations that come after what they modify, so they can end a sentence
+# ("Купих ябълки, круши и т.н."). Their period is kept only when it is also
+# the end of the sentence. All other abbreviations with a period precede a
+# name or number (гр. София, проф. Иванов, стр. 5) and always drop it.
+SENTENCE_FINAL_ABBREVS = {
+    'и т.н.', 'и т. н.', 'и др.',
+    'б.р.', 'б. р.', 'б.а.', 'б. а.',
+    'пр.н.е.', 'пр. н. е.', 'сл.н.е.', 'сл. н. е.',
+    'пр.Хр.', 'сл.Хр.',
 }
 
 # Institution abbreviations (spelled out letter by letter or as words)
@@ -180,13 +197,20 @@ def expand_abbreviation(abbrev: str) -> str:
     return abbrev
 
 
-def normalize_abbreviations(text: str) -> str:
+def normalize_abbreviations(text: str, include_units: bool = True) -> str:
     """
     Expand all recognized abbreviations in the text.
 
     Processes abbreviations in order of specificity (longer first)
     to avoid partial matches.
+
+    With include_units, a number followed by a measurement unit is also
+    expanded, number included ("1 км" → "един километър").
     """
+    # Units first, so "кв. м" is not read as "квартал м"
+    if include_units:
+        text = normalize_units(text)
+
     # Collect all abbreviations, sorted by length (longest first)
     all_abbrevs = {}
     for d in [COMMON_ABBREVS, ADDRESS_ABBREVS, GEO_ABBREVS, TITLE_ABBREVS,
@@ -202,15 +226,17 @@ def normalize_abbreviations(text: str) -> str:
         # Use word boundary or space/start/end boundary
         # Be careful with dots - they're part of some abbreviations
         pattern = r'(?<!\w)' + escaped + r'(?!\w)'
-        text = re.sub(pattern, full_form, text, flags=re.IGNORECASE)
-
-    # Handle measurement units (these need number context)
-    # Match: digit + space? + unit
-    for unit, full_form in sorted(MEASUREMENT_ABBREVS.items(),
-                                   key=lambda x: len(x[0]), reverse=True):
-        escaped_unit = re.escape(unit)
-        pattern = r'(\d)\s*' + escaped_unit + r'\b'
-        text = re.sub(pattern, r'\1 ' + full_form, text)
+        def repl(m, full_form=full_form,
+                 sentence_final=abbrev in SENTENCE_FINAL_ABBREVS):
+            found = m.group(0)
+            # Keep a capital (Проф. → Професор) so sentence starts stay visible,
+            # but not for all-caps acronyms (ДДС → данък добавена стойност)
+            if found[0].isupper() and not found.isupper():
+                full_form = full_form[0].upper() + full_form[1:]
+            if sentence_final:
+                return full_form + sentence_period(m.string, m.end())
+            return full_form
+        text = re.sub(pattern, repl, text, flags=re.IGNORECASE)
 
     return text
 

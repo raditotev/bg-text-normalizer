@@ -5,9 +5,9 @@ Converts currency amounts to spoken Bulgarian form.
 
 Supported currencies:
 - BGN (лева / стотинки)
-- EUR (евро / цента)
+- EUR (евро / евроцента)
 - USD (долара / цента)
-- GBP (лири / пенса)
+- GBP (паунда / пенса)
 """
 
 from .bg_numbers import number_to_words_cardinal
@@ -24,8 +24,8 @@ CURRENCY_INFO = {
     'EUR': {
         'main_singular': 'евро',
         'main_plural': 'евро',
-        'sub_singular': 'цент',
-        'sub_plural': 'цента',
+        'sub_singular': 'евроцент',
+        'sub_plural': 'евроцента',
         'main_gender': 'n',
         'sub_gender': 'm',
     },
@@ -38,13 +38,27 @@ CURRENCY_INFO = {
         'sub_gender': 'm',
     },
     'GBP': {
-        'main_singular': 'лира',
-        'main_plural': 'лири',
+        'main_singular': 'паунд',
+        'main_plural': 'паунда',
         'sub_singular': 'пени',
         'sub_plural': 'пенса',
-        'main_gender': 'f',
+        'main_gender': 'm',
         'sub_gender': 'm',
     },
+}
+
+
+# How each currency is written next to an amount
+CURRENCY_SUFFIXES = {
+    'BGN': r'лв|лева|лев|BGN',
+    'EUR': r'€|EUR|евро',
+    'USD': r'\$|USD|долара|долар',
+    'GBP': r'£|GBP|паунда|паунд',
+}
+CURRENCY_PREFIXES = {
+    'EUR': r'€|EUR',
+    'USD': r'\$|USD',
+    'GBP': r'£|GBP',
 }
 
 

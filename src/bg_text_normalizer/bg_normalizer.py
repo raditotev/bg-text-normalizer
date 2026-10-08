@@ -18,13 +18,21 @@ from .bg_numbers import (
     number_to_words_cardinal,
     number_to_words_ordinal,
     float_to_words,
+    fraction_to_words,
+    noun_gender,
+    short_decimal_to_words,
 )
 from .bg_dates import normalize_date, normalize_year, MONTH_NAMES
 from .bg_time import normalize_time
-from .bg_currency import normalize_currency
+from .bg_currency import normalize_currency, CURRENCY_SUFFIXES, CURRENCY_PREFIXES
 from .bg_abbreviations import normalize_abbreviations, expand_abbreviation
 from .bg_phone import normalize_phone_number
 from .bg_roman import roman_to_arabic
+from .bg_units import (
+    normalize_units, quantity_to_words, half_quantity_to_words, TIME_NOUNS,
+)
+from .bg_scales import normalize_scales
+from .bg_punctuation import sentence_period
 
 
 class BulgarianTextNormalizer:
@@ -46,48 +54,63 @@ class BulgarianTextNormalizer:
 
         original = text
 
-        # Step 1: Normalize abbreviations first (before numbers eat the dots)
-        if self.expand_abbrevs:
-            text = normalize_abbreviations(text)
-
-        # Step 2: Collapse space-separated large numbers: 7 000 000 → 7000000
+        # Step 1: Collapse space-separated large numbers: 7 000 000 → 7000000
         text = self._collapse_spaced_numbers(text)
 
-        # Step 3: Percentages (before dates, since 15.5% could match as date)
-        text = self._normalize_percentages(text)
+        # Step 2: Year ranges: 2025/2026 г., сезон 2024/2025
+        text = self._normalize_year_ranges(text)
 
-        # Step 4: Dates (before generic numbers, since dates contain numbers)
-        # Matches: 15.02.2026, 15.02.2026 г., 15/02/2026, 15-02-2026
-        text = self._normalize_dates(text)
+        # Step 3: Number ranges: 5-10 км → 5 до 10 км
+        text = self._normalize_number_ranges(text)
 
-        # Step 5: Time (before generic numbers)
-        # Matches: 14:30, 14:30 ч., 9:05 часа
-        text = self._normalize_times(text)
+        # Step 4: Scale words (before currency, since €1,5 млн. is not €1.50)
+        # Matches: 1,5 млн., 5 хил., 3 млрд. лв., 2 хиляди
+        text = normalize_scales(text)
 
-        # Step 6: Currency (before generic numbers)
+        # Step 5: Currency (before dates, since 12.05 € could match as a date)
         # Matches: 1500.50 лв., 25 лв, $100, €50, 100 EUR
         text = self._normalize_currency(text)
 
-        # Step 7: Phone numbers
+        # Step 6: Number + unit (before dates, since 3.5 кг could match as a date)
+        # Matches: 10 км, 1 км, 5°C, -5°C, 60 км/ч, 2 мин.
+        if self.expand_abbrevs:
+            text = normalize_units(text)
+
+        # Step 7: Abbreviations (units are already done)
+        if self.expand_abbrevs:
+            text = normalize_abbreviations(text, include_units=False)
+
+        # Step 8: Percentages (before dates, since 15.5% could match as date)
+        text = self._normalize_percentages(text)
+
+        # Step 9: Dates (before generic numbers, since dates contain numbers)
+        # Matches: 15.02.2026, 15.02.2026 г., 15/02/2026, 15-02-2026
+        text = self._normalize_dates(text)
+
+        # Step 10: Time (before generic numbers)
+        # Matches: 14:30, 14:30 ч., 9:05 часа
+        text = self._normalize_times(text)
+
+        # Step 11: Phone numbers
         text = self._normalize_phones(text)
 
-        # Step 8: Roman numerals (before generic numbers)
+        # Step 12: Roman numerals (before generic numbers)
         text = self._normalize_roman_numerals(text)
 
-        # Step 9: Symbols (№, &, etc.)
+        # Step 13: Symbols (№, &, etc.)
         text = self._normalize_symbols(text)
 
-        # Step 10: Ordinal numbers (before cardinals)
+        # Step 14: Ordinal numbers (before cardinals)
         # Matches: 1-ви, 2-ри, 3-ти, 15-ти, 1-ва, 2-ра
         text = self._normalize_ordinals(text)
 
-        # Step 11: Standalone years (4-digit numbers that look like years)
+        # Step 15: Standalone years (4-digit numbers that look like years)
         text = self._normalize_standalone_years(text)
 
-        # Step 12: Cardinal numbers (generic number-to-words)
+        # Step 16: Cardinal numbers (generic number-to-words)
         text = self._normalize_cardinal_numbers(text)
 
-        # Step 13: Clean up extra whitespace
+        # Step 17: Clean up extra whitespace
         text = re.sub(r'\s+', ' ', text).strip()
 
         if self.verbose and text != original:
@@ -108,6 +131,49 @@ class BulgarianTextNormalizer:
         text = re.sub(pattern, collapse_repl, text)
         return text
 
+    def _normalize_year_ranges(self, text: str) -> str:
+        """Read 2025/2026 г. or сезон 2024/2025 as two years.
+
+        A pair of years is a range when "г."/"година" follows it or when the
+        years are consecutive. Otherwise "1500-1800 км" would become years.
+        """
+        pattern = (r'(?<![\w.,/\-–])(\d{4})\s?[/\-–]\s?(\d{4})(?![\w/\-–])'
+                   r'(?:\s*(?:г(?!\w)(\.)?|(година)(?!\w)))?')
+        def year_range_repl(m):
+            first, second = int(m.group(1)), int(m.group(2))
+            has_suffix = m.group(0).rstrip('.').endswith(('г', 'година'))
+            if not (1000 <= first <= 2100 and 1000 <= second <= 2100):
+                return m.group(0)
+            if not has_suffix and second != first + 1:
+                return m.group(0)
+            # Same century: "2024-2025" → "две хиляди двадесет и четвърта, двадесет и пета"
+            if first // 100 == second // 100 and second % 100:
+                second_words = number_to_words_ordinal(second % 100, gender='f')
+            else:
+                second_words = normalize_year(second)
+            words = normalize_year(first) + ', ' + second_words
+            if has_suffix:
+                words += ' година'
+                if m.group(3):
+                    words += sentence_period(m.string, m.end())
+            return words
+        return re.sub(pattern, year_range_repl, text)
+
+    def _normalize_number_ranges(self, text: str) -> str:
+        """Turn the dash of a two-number range into "до": 5-10 км → 5 до 10 км.
+
+        Three-part forms (15-02-2026, 0888-123-456) and numbers with a
+        leading zero are left for the date and phone steps.
+        """
+        pattern = (r'(?<![\w.,:/\-–])([1-9]\d{0,3}|0)(?:-|\s?–\s?)([1-9]\d{0,3}|0)'
+                   r'(?![\w/]|[.,]\d|\s?[-–]\s?\d)')
+        def range_repl(m):
+            before = m.string[:m.start()].split()
+            # "между 15 и 20", otherwise "5 до 10"
+            joiner = 'и' if before and before[-1].lower() == 'между' else 'до'
+            return f'{m.group(1)} {joiner} {m.group(2)}'
+        return re.sub(pattern, range_repl, text)
+
     def _normalize_symbols(self, text: str) -> str:
         """Normalize special symbols."""
         text = text.replace('№', 'номер ')
@@ -117,10 +183,10 @@ class BulgarianTextNormalizer:
     def _normalize_dates(self, text: str) -> str:
         """Normalize date patterns."""
         # Full date with year: 15.02.2026 г. or 15.02.2026
-        pattern = r'\b(\d{1,2})[./\-](\d{1,2})[./\-](\d{4})\s*г\.?'
+        pattern = r'\b(\d{1,2})[./\-](\d{1,2})[./\-](\d{4})\s*г(?!\w)(\.)?'
         text = re.sub(pattern, lambda m: normalize_date(
             int(m.group(1)), int(m.group(2)), int(m.group(3)), include_year_suffix=True
-        ), text)
+        ) + (sentence_period(m.string, m.end()) if m.group(4) else ''), text)
 
         # Full date without г.: 15.02.2026
         pattern = r'\b(\d{1,2})[./\-](\d{1,2})[./\-](\d{4})\b'
@@ -128,9 +194,20 @@ class BulgarianTextNormalizer:
             int(m.group(1)), int(m.group(2)), int(m.group(3))
         ), text)
 
-        # Partial date: 15.02 or 15/02 (day.month, no year)
+        # Fraction: 3/4, 1/2. Slash notation is only a date with all three parts.
+        pattern = r'(?<![\d/])([1-9]\d{0,3})/(\d{1,4})(?![\d/])'
+        def fraction_repl(m):
+            numerator, denominator = int(m.group(1)), int(m.group(2))
+            if denominator < 2:
+                return (number_to_words_cardinal(numerator) + ' делено на '
+                        + number_to_words_cardinal(denominator))
+            return fraction_to_words(numerator, denominator)
+        text = re.sub(pattern, fraction_repl, text)
+
+        # Partial date: 15.02 (day.month, no year). The month needs two digits,
+        # so 1.5 and 3.5 stay decimals.
         # Only match if not part of a longer number or followed by currency/unit
-        pattern = r'\b(\d{1,2})[./](\d{1,2})\b(?!\.\d)(?!\s*(?:лв|лева|евро|долар|EUR|USD|BGN|GBP|%|ч\.|часа))'
+        pattern = r'\b(\d{1,2})\.(\d{2})\b(?!\.\d)(?!\s*(?:лв|лева|евро|долар|EUR|USD|BGN|GBP|%|ч\.|часа))'
         def partial_date_repl(m):
             day, month = int(m.group(1)), int(m.group(2))
             if 1 <= day <= 31 and 1 <= month <= 12:
@@ -143,14 +220,16 @@ class BulgarianTextNormalizer:
         month_name_to_num = {name.lower(): num for num, name in MONTH_NAMES.items()}
 
         # With year: "15 май 2026 г." or "15 май 2026"
-        pattern = r'\b(\d{1,2})\s+(' + month_names_pattern + r')\s+(\d{4})\s*(г\.?)?'
+        pattern = (r'\b(\d{1,2})\s+(' + month_names_pattern + r')\s+(\d{4})'
+                   r'(?:\s*(г)(?!\w)(\.)?)?')
         def month_name_year_repl(m):
             day = int(m.group(1))
             month = month_name_to_num[m.group(2).lower()]
             year = int(m.group(3))
             has_suffix = m.group(4) is not None
             if 1 <= day <= 31:
-                return normalize_date(day, month, year, include_year_suffix=has_suffix)
+                period = sentence_period(m.string, m.end()) if m.group(5) else ''
+                return normalize_date(day, month, year, include_year_suffix=has_suffix) + period
             return m.group(0)
         text = re.sub(pattern, month_name_year_repl, text, flags=re.IGNORECASE)
 
@@ -169,10 +248,10 @@ class BulgarianTextNormalizer:
     def _normalize_times(self, text: str) -> str:
         """Normalize time patterns."""
         # Time with ч./часа: 14:30 ч. or 14:30 часа
-        pattern = r'\b(\d{1,2}):(\d{2})\s*(?:ч\.|часа|часът)'
+        pattern = r'\b(\d{1,2}):(\d{2})\s*(?:ч(?!\w)(\.)?|часа|часът)'
         text = re.sub(pattern, lambda m: normalize_time(
             int(m.group(1)), int(m.group(2)), include_suffix=True
-        ), text)
+        ) + (sentence_period(m.string, m.end()) if m.group(3) else ''), text)
 
         # Standalone time: 14:30
         pattern = r'\b(\d{1,2}):(\d{2})\b'
@@ -184,31 +263,20 @@ class BulgarianTextNormalizer:
 
     def _normalize_currency(self, text: str) -> str:
         """Normalize currency patterns."""
-        # Bulgarian Lev: 1500.50 лв. or 1500,50 лв or 1500 лв.
-        pattern = r'\b(\d[\d\s]*(?:[.,]\d{1,2})?)\s*(?:лв\.?|лева|BGN)\b'
-        text = re.sub(pattern, lambda m: normalize_currency(
-            m.group(1).replace(' ', ''), 'BGN'
-        ), text)
+        amount = r'(\d+(?:[.,]\d{1,2})?)(?![\d.,]\d)'
+        for code, tokens in CURRENCY_SUFFIXES.items():
+            # Amount first: 1500.50 лв., 1500 €, 25 USD, 20 евро
+            pattern = r'(?<![\w.,:/])' + amount + r'\s*(?:' + tokens + r')(?!\w)(\.(?!\w))?'
+            text = re.sub(pattern, lambda m, code=code: normalize_currency(
+                m.group(1), code
+            ) + (sentence_period(m.string, m.end()) if m.group(2) else ''), text)
 
-        # Euro: €50, 50 EUR, 50 евро
-        pattern = r'€\s*(\d[\d\s]*(?:[.,]\d{1,2})?)\s*'
-        text = re.sub(pattern, lambda m: normalize_currency(
-            m.group(1).replace(' ', ''), 'EUR'
-        ) + ' ', text)
-        pattern = r'\b(\d[\d\s]*(?:[.,]\d{1,2})?)\s*(?:EUR|евро)\b'
-        text = re.sub(pattern, lambda m: normalize_currency(
-            m.group(1).replace(' ', ''), 'EUR'
-        ), text)
-
-        # USD: $50, 50 USD, 50 долара
-        pattern = r'\$\s*(\d[\d\s]*(?:[.,]\d{1,2})?)\s*'
-        text = re.sub(pattern, lambda m: normalize_currency(
-            m.group(1).replace(' ', ''), 'USD'
-        ) + ' ', text)
-        pattern = r'\b(\d[\d\s]*(?:[.,]\d{1,2})?)\s*(?:USD|долара?)\b'
-        text = re.sub(pattern, lambda m: normalize_currency(
-            m.group(1).replace(' ', ''), 'USD'
-        ), text)
+        for code, tokens in CURRENCY_PREFIXES.items():
+            # Symbol first: €1500, $ 100, EUR 100
+            pattern = r'(?<!\w)(?:' + tokens + r')\s*' + amount + r'(?!\w)'
+            text = re.sub(pattern, lambda m, code=code: normalize_currency(
+                m.group(1), code
+            ), text)
 
         return text
 
@@ -227,7 +295,7 @@ class BulgarianTextNormalizer:
     def _normalize_phones(self, text: str) -> str:
         """Normalize phone number patterns."""
         # Bulgarian phone: +359 2 1234567, 0888 123 456, 02/1234567
-        pattern = r'(?:\+359[\s\-]?|0)[\d\s\-/]{6,12}\d'
+        pattern = r'(?:\+359[\s\-]?|(?<!\w)0)[\d\s\-/]{6,12}\d'
         text = re.sub(pattern, lambda m: normalize_phone_number(m.group(0)), text)
         return text
 
@@ -270,7 +338,8 @@ class BulgarianTextNormalizer:
 
     def _normalize_ordinals(self, text: str) -> str:
         """Normalize ordinal number patterns like 1-ви, 2-ри, 3-ти, 1-ва."""
-        pattern = r'\b(\d+)\s*-?\s*(ви|ри|ти|ми|ва|ра|та|на|во|ро|то|но)\b'
+        # Hyphen or no space: "1 на 100" is not an ordinal
+        pattern = r'\b(\d+)-?(ви|ри|ти|ми|ва|ра|та|на|во|ро|то|но)\b'
         def ordinal_repl(m):
             num = int(m.group(1))
             suffix = m.group(2).lower()
@@ -289,29 +358,47 @@ class BulgarianTextNormalizer:
         """Normalize 4-digit years that appear in year-like contexts."""
         # Year with г./година: 2026 г., 1989 година
         # Do NOT match "години" (plural) — that means "years" as duration, not a year label
-        pattern = r'\b(\d{4})\s*(г\.|година)(?!и)'
+        # Before/after the common era a year is counted: "триста години преди новата ера"
+        era = re.compile(r'\s*(?:преди|след)\s+(?:новата\s+ера|христа)', re.IGNORECASE)
+        pattern = r'\b(\d{4})\s*(г\.|г(?!\w)|година)(?!и)'
         def year_repl(m):
             year = int(m.group(1))
             suffix = m.group(2)
+            if suffix == 'г.' and era.match(m.string, m.end()):
+                return (quantity_to_words(m.group(1), 'година', 'години', 'f')
+                        + sentence_period(m.string, m.end()))
             if 1000 <= year <= 2100:
-                return normalize_year(year) + ' година'
+                period = sentence_period(m.string, m.end()) if suffix == 'г.' else ''
+                return normalize_year(year) + ' година' + period
             return m.group(0)
         text = re.sub(pattern, year_repl, text)
+
+        # "г." after a shorter number: a year (през 865 г.) from 100 on, or a
+        # count of years: an age (на 35 г.) or a year of the era (300 г. пр.н.е.)
+        pattern = r'(?<![\w.,:/])(\d{1,3})\s*г\.(?!\w)'
+        def short_year_repl(m):
+            n = int(m.group(1))
+            period = sentence_period(m.string, m.end())
+            if n >= 100 and not era.match(m.string, m.end()):
+                return normalize_year(n) + ' година' + period
+            return quantity_to_words(m.group(1), 'година', 'години', 'f') + period
+        text = re.sub(pattern, short_year_repl, text)
         return text
 
     def _normalize_cardinal_numbers(self, text: str) -> str:
         """Normalize remaining standalone numbers to cardinal words."""
-        # Decimal numbers: 3.14, 1,5
+        # Negative numbers: -3 → минус три (not ranges like 5-10, handled earlier)
+        text = re.sub(r'(?<![\w.,:/\-−])[-−](?=\d)', 'минус ', text)
+
+        # Halves of time: 1.5 години → година и половина
+        pattern = (r'\b(\d+)[.,]50*\s+(' + '|'.join(TIME_NOUNS) + r')(?!\w)')
+        text = re.sub(pattern, lambda m: half_quantity_to_words(
+            int(m.group(1)), *TIME_NOUNS[m.group(2).lower()]
+        ), text, flags=re.IGNORECASE)
+
+        # Decimal numbers, read as said aloud: 3.5 → три цяло и пет
         pattern = r'\b(\d+)[.,](\d+)\b'
-        def decimal_repl(m):
-            whole = m.group(1)
-            frac = m.group(2)
-            num_str = f"{whole}.{frac}"
-            try:
-                return float_to_words(num_str)
-            except (ValueError, KeyError):
-                return m.group(0)
-        text = re.sub(pattern, decimal_repl, text)
+        text = re.sub(pattern, lambda m: short_decimal_to_words(m.group(1), m.group(2)), text)
 
         # Integer numbers
         pattern = r'\b(\d+)\b'
@@ -319,8 +406,10 @@ class BulgarianTextNormalizer:
             num = int(m.group(1))
             if num > 999999999999:  # Skip very large numbers
                 return m.group(0)
+            next_word = re.match(r'\s+([^\W\d_]+)', m.string[m.end():])
+            gender = noun_gender(num, next_word.group(1)) if next_word else 'm'
             try:
-                return number_to_words_cardinal(num)
+                return number_to_words_cardinal(num, gender)
             except (ValueError, KeyError):
                 return m.group(0)
         text = re.sub(pattern, cardinal_repl, text)

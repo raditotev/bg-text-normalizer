@@ -378,6 +378,77 @@ def float_to_words(f, gender: str = 'n') -> str:
     return result.strip()
 
 
+# Plural nouns that make a number ending in 1 or 2 feminine or neuter
+# ("две минути", "двадесет и една страници", "две деца"). Masculine is the
+# default, so nouns not listed here keep "един"/"два". A list rather than an
+# ending rule, because masculine person nouns also end in -и (два туристи).
+FEMININE_PLURALS = {
+    'минути', 'секунди', 'години', 'седмици', 'нощи', 'вечери', 'сутрини',
+    'страници', 'книги', 'глави', 'думи', 'букви', 'цифри', 'задачи',
+    'жени', 'майки', 'дъщери', 'сестри', 'баби',
+    'стаи', 'къщи', 'улици', 'коли', 'части', 'точки', 'бройки', 'стъпки',
+    'чаши', 'лъжици', 'лъжички', 'капки', 'таблетки', 'порции', 'ябълки',
+    'бутилки', 'кутии', 'линии', 'зони', 'държави', 'страни', 'фирми',
+    'компании', 'партии', 'болници',
+}
+NEUTER_PLURALS = {
+    'деца', 'места', 'яйца', 'неща', 'писма', 'момичета', 'кучета', 'села',
+    'лица', 'имена', 'сърца', 'очи', 'уши', 'кафета', 'парчета', 'училища',
+}
+# Masculine singulars ending in -а/-я
+_MASCULINE_IN_A = {'баща', 'съдия', 'колега', 'чичо', 'дядо'}
+
+
+def noun_gender(n: int, noun: str) -> str:
+    """
+    Grammatical gender a number takes before `noun`: "1 година" → 'f',
+    "1 дете" → 'n', "2 минути" → 'f', "2 пъти" → 'm'.
+    """
+    word = noun.lower()
+    if word in NEUTER_PLURALS:
+        return 'n'
+    if word in FEMININE_PLURALS:
+        return 'f'
+    if n == 1 and len(word) >= 3 and word not in _MASCULINE_IN_A:
+        # Singular: feminine nouns end in -а/-я, neuter in -о/-е
+        if word[-1] in 'ая':
+            return 'f'
+        if word[-1] in 'ое':
+            return 'n'
+    return 'm'
+
+
+def short_decimal_to_words(whole: str, fraction: str) -> str:
+    """
+    Read a decimal the way it is said aloud, without the denominator:
+    3.5 → "три цяло и пет", 3.14 → "три цяло и четиринадесет",
+    3.005 → "три цяло и нула нула пет".
+    """
+    zeros = len(fraction) - len(fraction.lstrip('0'))
+    digits = fraction.lstrip('0')
+    parts = [number_to_words_cardinal(int(whole), 'n'), 'цяло и']
+    parts.extend(['нула'] * zeros)
+    if digits:
+        parts.append(number_to_words_cardinal(int(digits), 'n'))
+    return ' '.join(parts)
+
+
+def fraction_to_words(numerator: int, denominator: int) -> str:
+    """
+    Convert a common fraction to Bulgarian words.
+    E.g., 1/2 → "една втора", 3/4 → "три четвърти", 5/8 → "пет осми"
+
+    The numerator agrees with the implied feminine noun (част), and the
+    denominator is a feminine ordinal: singular after 1, plural otherwise.
+    """
+    num_words = number_to_words_cardinal(numerator, 'f')
+    denom_words = number_to_words_ordinal(denominator, 'f')
+    if numerator != 1 and denom_words.endswith('а'):
+        # Plural of the feminine ordinal: втора → втори, стотна → стотни
+        denom_words = denom_words[:-1] + 'и'
+    return f"{num_words} {denom_words}"
+
+
 if __name__ == '__main__':
     # Test cardinal numbers
     test_cardinals = [

@@ -9,11 +9,15 @@ A comprehensive text normalization package that converts written Bulgarian text 
 | **Numbers** | `1500` → `хиляда и петстотин` |
 | **Dates** | `15.02.2026 г.` → `петнадесети февруари две хиляди двадесет и шеста година` |
 | **Time** | `14:30 ч.` → `четиринадесет и тридесет часа` |
-| **Currency** | `99.99 лв.` → `деветдесет и девет лева и деветдесет и девет стотинки` |
+| **Currency** | `99.99 лв.` → `деветдесет и девет лева и деветдесет и девет стотинки`, `12.50 €` → `дванадесет евро и петдесет евроцента` |
+| **Scale words** | `1,5 млн.` → `един и половина милиона`, `5 хил.` → `пет хиляди` |
+| **Units** | `1 км` → `един километър`, `-5°C` → `минус пет градуса`, `60 км/ч` → `шестдесет километра в час` |
+| **Fractions** | `3/4` → `три четвърти` |
+| **Ranges** | `5-10 км` → `пет до десет километра`, `2025/2026 г.` → `две хиляди двадесет и пета, двадесет и шеста година` |
 | **Percentages** | `15.5%` → `петнадесет цяло и пет десети процента` |
 | **Ordinals** | `21-ви` → `двадесет и първи` |
 | **Abbreviations** | `бул. Витоша, гр. София` → `булевард Витоша, град София` |
-| **Phone numbers** | `+359 888 123 456` → digit-by-digit reading |
+| **Phone numbers** | `0888 123 456` → `нула осем осем осем едно две три четири пет шест` |
 | **Roman numerals** | `век XXI` → `век двадесет и първи` |
 | **Symbols** | `№10` → `номер десет` |
 
@@ -94,6 +98,9 @@ bg-text-normalizer/
 │       ├── bg_dates.py           # Date normalization
 │       ├── bg_time.py            # Time normalization
 │       ├── bg_currency.py        # Currency (BGN, EUR, USD, GBP)
+│       ├── bg_scales.py          # хил., млн., млрд.
+│       ├── bg_units.py           # Measurement units with count forms
+│       ├── bg_punctuation.py     # Keeps an abbreviation's period only at sentence end
 │       ├── bg_abbreviations.py   # 100+ Bulgarian abbreviations
 │       ├── bg_phone.py           # Phone number reading
 │       └── bg_roman.py           # Roman numeral conversion
